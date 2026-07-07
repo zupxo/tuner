@@ -351,6 +351,12 @@
   const recentFreqs = [];
   function loop(){
     if(!listening) return;
+    if(audioCtx.state !== 'running'){
+      audioCtx.resume();
+      $('hint').innerHTML = 'audio engine <b>' + audioCtx.state + '</b> — tap the screen to wake it';
+      requestAnimationFrame(loop);
+      return;
+    }
     analyser.getFloatTimeDomainData(buf);
     const f = detectPitch(buf, audioCtx.sampleRate);
     $('levelBar').style.width = Math.min(100, lastRms * 900) + '%';
@@ -417,13 +423,18 @@
     }
     try{
       if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-        $('hint').innerHTML = '<b>No mic API available</b> — this page is not in a secure context or the app blocks it. Open in Safari/Chrome via https.';
+        $('hint').innerHTML = '<b>No mic API available</b> — open this page over https in Safari or Chrome.';
         return;
       }
+      // Create + wake the audio engine synchronously inside the tap,
+      // BEFORE any await — iOS refuses to start it otherwise.
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx.resume();
       mediaStream = await navigator.mediaDevices.getUserMedia({
         audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }
       });
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if(audioCtx.state !== 'running') await audioCtx.resume();
+      const track = mediaStream.getAudioTracks()[0];
       const src = audioCtx.createMediaStreamSource(mediaStream);
       const boost = audioCtx.createGain();
       boost.gain.value = 5;               // amplify quiet phone mics
@@ -436,7 +447,8 @@
       emaCents = null; recentFreqs.length = 0;
       $('startBtn').textContent = '■ Stop';
       $('startBtn').classList.add('listening');
-      $('hint').innerHTML = 'Listening… play <b>one key</b> at a time';
+      $('hint').innerHTML = 'audio engine: <b>' + audioCtx.state + '</b> · mic: <b>' +
+        (track ? (track.muted ? 'MUTED by system' : 'live') : 'none') + '</b> — play a key';
       loop();
     }catch(e){
       $('hint').innerHTML = '<b>Mic error: ' + (e.name || 'unknown') + '</b> — ' +
@@ -462,6 +474,11 @@
   }
   $('a4up').addEventListener('click', () => setA4(a4 + 1));
   $('a4down').addEventListener('click', () => setA4(a4 - 1));
+
+  // any tap anywhere revives a suspended audio engine (iOS quirk)
+  document.addEventListener('touchend', () => {
+    if(audioCtx && audioCtx.state !== 'running') audioCtx.resume();
+  }, true);
 
   // scroll keyboard to middle C on load
   requestAnimationFrame(() => {
