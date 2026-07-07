@@ -53,7 +53,7 @@
   /* Gauge */
   .gauge-wrap{width:min(92vw,420px);position:relative}
   .gauge-wrap svg{width:100%;height:auto;display:block}
-  .needle{transition:transform .08s linear;transform-origin:150px 150px}
+  .needle{pointer-events:none}
   .tune-lamp{
     position:absolute;top:8%;left:50%;transform:translateX(-50%);
     font-size:11px;letter-spacing:.25em;color:var(--muted);
@@ -296,10 +296,12 @@
     $('greenzone').setAttribute('d', `M 150 150 L ${xA} ${yA} A 130 130 0 0 1 ${xB} ${yB} Z`);
   })();
 
+  let needleDeg = 0;
   function setNeedle(cents){
     const clamped = Math.max(-50, Math.min(50, cents));
-    const deg = (clamped / 50) * 60;
-    $('needleLine').setAttribute('transform', `rotate(${deg} 150 150)`);
+    const target = (clamped / 50) * 60;
+    needleDeg += (target - needleDeg) * 0.35;   // smooth glide, no CSS involved
+    $('needleLine').setAttribute('transform', 'rotate(' + needleDeg.toFixed(2) + ' 150 150)');
   }
 
   // ---------- pitch detection (autocorrelation) ----------
