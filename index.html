@@ -81,6 +81,8 @@
   .cents-read.ok{color:var(--green-bright)}
   .hint{font-size:12px;color:var(--muted);text-align:center;min-height:16px;letter-spacing:.02em}
   .hint b{color:var(--brass);font-weight:normal}
+  .level-wrap{width:min(60vw,240px);height:4px;background:var(--ebony-3);border-radius:2px;overflow:hidden}
+  .level-bar{height:100%;width:0%;background:var(--brass);border-radius:2px;transition:width .06s linear}
 
   .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;padding:4px 0}
   .btn{
@@ -159,6 +161,7 @@
     </div>
   </div>
   <div class="hint" id="hint">Press <b>Start listening</b>, then play one key at a time</div>
+  <div class="level-wrap"><div class="level-bar" id="levelBar"></div></div>
 
   <div class="controls">
     <button class="btn primary" id="startBtn">▶ Start listening</button>
@@ -189,6 +192,7 @@
   const tunedKeys = new Set();
   let inTuneFrames = 0;
   let emaCents = null;
+  let lastRms = 0;
 
   // ---------- helpers ----------
   const $ = id => document.getElementById(id);
@@ -304,11 +308,12 @@
     let rms = 0;
     for(let i = 0; i < N; i++) rms += data[i] * data[i];
     rms = Math.sqrt(rms / N);
-    if(rms < 0.008) return -1; // too quiet
+    lastRms = rms;
+    if(rms < 0.002) return -1; // too quiet
 
     // trim leading/trailing silence
     let start = 0, end = N - 1;
-    const thr = 0.2 * rms;
+    const thr = 0.15 * rms;
     while(start < N && Math.abs(data[start]) < thr) start++;
     while(end > start && Math.abs(data[end]) < thr) end--;
     const M = end - start;
@@ -330,7 +335,7 @@
     for(let lag = Math.max(d, minLag); lag <= maxLag; lag++){
       if(ac[lag] > bestVal){ bestVal = ac[lag]; bestLag = lag; }
     }
-    if(bestLag <= 0 || bestVal < 0.3 * ac[0]) return -1;
+    if(bestLag <= 0 || bestVal < 0.18 * ac[0]) return -1;
 
     // parabolic interpolation around the peak
     let shift = 0;
@@ -348,6 +353,7 @@
     if(!listening) return;
     analyser.getFloatTimeDomainData(buf);
     const f = detectPitch(buf, audioCtx.sampleRate);
+    $('levelBar').style.width = Math.min(100, lastRms * 900) + '%';
 
     if(f > 0){
       recentFreqs.push(f);
@@ -419,9 +425,12 @@
       });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const src = audioCtx.createMediaStreamSource(mediaStream);
+      const boost = audioCtx.createGain();
+      boost.gain.value = 5;               // amplify quiet phone mics
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 8192;
-      src.connect(analyser);
+      src.connect(boost);
+      boost.connect(analyser);
       buf = new Float32Array(analyser.fftSize);
       listening = true;
       emaCents = null; recentFreqs.length = 0;
