@@ -285,12 +285,12 @@
       const r1 = 130, r2 = (c % 25 === 0) ? 114 : 122;
       const x1 = 150 + r1 * Math.sin(a), y1 = 150 - r1 * Math.cos(a);
       const x2 = 150 + r2 * Math.sin(a), y2 = 150 - r2 * Math.cos(a);
-      const col = (Math.abs(c) <= 5) ? '#6FAE7C' : '#4A4436';
+      const col = (c === 0) ? '#6FAE7C' : '#4A4436';
       html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${c===0?2:1}"/>`;
     }
     g.innerHTML = html;
-    // green zone wedge ±5 cents
-    const a5 = (5/50) * 60 * Math.PI / 180;
+    // green zone wedge ±2 cents
+    const a5 = (2/50) * 60 * Math.PI / 180;
     const xA = 150 - 130 * Math.sin(a5), yA = 150 - 130 * Math.cos(a5);
     const xB = 150 + 130 * Math.sin(a5), yB = 150 - 130 * Math.cos(a5);
     $('greenzone').setAttribute('d', `M 150 150 L ${xA} ${yA} A 130 130 0 0 1 ${xB} ${yB} Z`);
@@ -346,7 +346,25 @@
       const denom = (y0 - 2 * y1 + y2);
       if(denom !== 0) shift = 0.5 * (y0 - y2) / denom;
     }
-    return sampleRate / (bestLag + shift);
+    let period = bestLag + shift;
+
+    // precision refinement: locate the peak at the highest clean multiple
+    // of the period and divide back — shrinks interpolation error by k
+    const k = Math.min(6, Math.floor(maxLag / bestLag));
+    if(k >= 2){
+      const approx = bestLag * k;
+      let pl = -1, pv = -Infinity;
+      for(let lag = Math.max(minLag, approx - 5); lag <= Math.min(maxLag - 1, approx + 5); lag++){
+        if(ac[lag] > pv){ pv = ac[lag]; pl = lag; }
+      }
+      if(pl > 0 && pv > 0.12 * ac[0]){
+        const y0 = ac[pl - 1], y1 = ac[pl], y2 = ac[pl + 1];
+        const den = (y0 - 2 * y1 + y2);
+        const sh = den !== 0 ? 0.5 * (y0 - y2) / den : 0;
+        period = (pl + sh) / k;
+      }
+    }
+    return sampleRate / period;
   }
 
   // ---------- main loop ----------
@@ -365,7 +383,7 @@
 
     if(f > 0){
       recentFreqs.push(f);
-      if(recentFreqs.length > 7) recentFreqs.shift();
+      if(recentFreqs.length > 11) recentFreqs.shift();
       const sorted = [...recentFreqs].sort((a,b) => a - b);
       const medF = sorted[Math.floor(sorted.length / 2)];
 
@@ -391,11 +409,11 @@
         const cr = $('centsRead');
         const c = emaCents;
         cr.textContent = (c > 0 ? '+' : '') + c.toFixed(1) + ' cents';
-        cr.className = 'cents-read ' + (Math.abs(c) <= 5 ? 'ok' : (c > 0 ? 'sharp' : 'flat'));
-        $('hint').innerHTML = Math.abs(c) <= 5
+        cr.className = 'cents-read ' + (Math.abs(c) <= 2 ? 'ok' : (c > 0 ? 'sharp' : 'flat'));
+        $('hint').innerHTML = Math.abs(c) <= 2
           ? 'Hold it there — <b>in tune</b>'
           : (c > 0 ? 'Too <b>sharp</b> — tune down ↓' : 'Too <b>flat</b> — tune up ↑');
-        const lit = Math.abs(c) <= 5;
+        const lit = Math.abs(c) <= 2;
         $('lamp').classList.toggle('lit', lit);
 
         if(lit){ inTuneFrames++; } else { inTuneFrames = 0; }
